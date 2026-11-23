@@ -28,3 +28,13 @@ def make_preview(src: str, dst: str) -> str:
         if os.path.getsize(dst) <= MAX_BYTES:
             return dst
     raise RuntimeError(f"preview still >{MAX_BYTES} bytes")
+
+
+def first_frame(src: str, dst: str, max_bytes: int = 1_900_000) -> str:
+    """JPEG of the very first video frame (the hook pill is burned in from t=0), kept under YouTube's 2 MB limit."""
+    for q in (2, 4, 7, 12):
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", src, "-frames:v", "1",
+                        "-q:v", str(q), dst], check=True, timeout=60)
+        if os.path.getsize(dst) <= max_bytes:
+            return dst
+    raise RuntimeError("first-frame thumbnail exceeds size limit")

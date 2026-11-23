@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS clips (
   preview_480p_path TEXT,
   hook_text TEXT,
   hashtags TEXT,
+  layout TEXT,
   status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN
     ('queued','sanitizing','rendering','awaiting_approval','approved','skipped','published','failed')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))

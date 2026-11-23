@@ -37,7 +37,7 @@ def process(db, clip: dict):
 
         db.set_status(sid, "rendering")
         with audio_sanitizer.heavy_lock():          # keep Whisper off while nothing else heavy runs
-            job = osc.submit(san)
+            job = osc.submit(san, layouts=osc.layouts_for(clip.get('layout')))
             log.info("clip %s -> openshorts job %s", sid, job)
             result = osc.wait(job)
         master = osc.fetch_clip(result, job, str(CLIPS / chan / f"{sid}_916.mp4"))

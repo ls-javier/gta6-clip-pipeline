@@ -14,10 +14,18 @@ from pathlib import Path
 
 log = logging.getLogger("sanitizer")
 LOCK_PATH = os.environ.get("HEAVY_LOCK", "/data/locks/heavy.lock")
-# Stems mixed back in. Music is spread across drums/bass/other; vocals carries speech
-# (and any sung lyrics). Default keeps vocals only (safest for licensed music); add ",other" to keep game SFX/ambience.
-KEEP = [s for s in os.environ.get("SANITIZER_KEEP", "vocals").split(",") if s]
-KEEP_GAIN = {"other": float(os.environ.get("SANITIZER_OTHER_GAIN", "0.6"))}
+# Which Demucs stems are mixed back in, and at what gain. Music is spread over every stem, so any stem
+# kept besides `vocals` also keeps some music: that is the trade-off between a "empty" clip and copyright risk.
+#   strict   : voice only (safest for licensed music; game SFX/ambience are lost)
+#   balanced : voice + `other` (engine, ambience, crowd, gunfire tails) + `drums` (impacts, shots); bass is dropped
+#              because it is mostly the music bed.
+PRESETS = {
+    "strict": {"vocals": 1.0},
+    "balanced": {"vocals": 1.0, "other": 1.0, "drums": 1.0},
+}
+MODE = os.environ.get("SANITIZER_MODE", "balanced").lower()
+if MODE not in PRESETS:
+    raise ValueError(f"SANITIZER_MODE must be one of {sorted(PRESETS)}, got {MODE!r}")
 MODEL = os.environ.get("DEMUCS_MODEL", "htdemucs")
 
 
@@ -47,7 +55,9 @@ def separate(wav: str, outdir: str) -> dict:
 
 
 def sanitize(src_mp4: str, dst_mp4: str, keep=None) -> str:
-    keep = keep or KEEP
+    """keep: None (use SANITIZER_MODE), a list of stems (gain 1.0) or a {stem: gain} dict."""
+    gains = PRESETS[MODE] if keep is None else (keep if isinstance(keep, dict) else {k: 1.0 for k in keep})
+    keep = list(gains)
     with heavy_lock(), tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as td:
         wav = str(Path(td) / "audio.wav")
         _run(["ffmpeg", "-v", "error", "-y", "-i", src_mp4, "-vn", "-ac", "2", "-ar", "44100", wav])
@@ -58,7 +68,7 @@ def sanitize(src_mp4: str, dst_mp4: str, keep=None) -> str:
         inputs, filt = [], []
         for i, k in enumerate(keep):
             inputs += ["-i", stems[k]]
-            filt.append(f"[{i+1}:a]volume={KEEP_GAIN.get(k, 1.0)}[s{i}]")
+            filt.append(f"[{i+1}:a]volume={gains[k]}[s{i}]")
         mix = "".join(f"[s{i}]" for i in range(len(keep)))
         filt.append(f"{mix}amix=inputs={len(keep)}:normalize=0,alimiter=limit=0.95[a]")
         Path(dst_mp4).parent.mkdir(parents=True, exist_ok=True)

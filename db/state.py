@@ -29,6 +29,8 @@ class State:
                 self._conn.execute("ALTER TABLE streamers ADD COLUMN spike_ratio_threshold REAL")
             if "mode" not in scols:
                 self._conn.execute("ALTER TABLE streamers ADD COLUMN mode TEXT NOT NULL DEFAULT 'always'")
+            if "layout" not in cols:                        # per-clip framing chosen from Telegram (NULL = default)
+                self._conn.execute("ALTER TABLE clips ADD COLUMN layout TEXT")
             if "hashtags" not in cols:                      # migrate DBs created before hashtags existed
                 self._conn.execute("ALTER TABLE clips ADD COLUMN hashtags TEXT")
 

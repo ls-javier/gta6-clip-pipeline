@@ -29,18 +29,41 @@ def handle_callback(db, cq: dict):
     if str(cq.get("message", {}).get("chat", {}).get("id")) != CHAT:
         _tg("answerCallbackQuery", callback_query_id=cq["id"], text="No autorizado")
         return
-    action, _, sid = data.partition(":")
+    action, _, rest = data.partition(":")
+    sid, _, arg = rest.partition(":")
     rows = db.query("SELECT status FROM clips WHERE short_id=?", (sid,))
-    if action not in ("ok", "no", "recut") or not rows:
+    if action not in ("ok", "no", "recut", "fr", "fl", "bk") or not rows:
         _tg("answerCallbackQuery", callback_query_id=cq["id"], text="Clip desconocido")
         return
     if rows[0]["status"] != "awaiting_approval":
         _tg("answerCallbackQuery", callback_query_id=cq["id"], text=f"Ya está: {rows[0]['status']}")
         return
+    msg = cq["message"]
+    if action in ("fr", "bk"):                       # open / close the framing menu (no state change)
+        from watcher import openshorts_client as osc, publishing
+        if action == "fr":
+            kb = {"inline_keyboard": [[{"text": lbl, "callback_data": f"fl:{sid}:{k}"}] for k, (lbl, _) in osc.FRAMINGS.items()]
+                  + [[{"text": "⬅️ Volver", "callback_data": f"bk:{sid}"}]]}
+        else:
+            kb = json.loads(publishing.clip_meta(db, sid)["telegram_keyboard"])
+        _tg("answerCallbackQuery", callback_query_id=cq["id"])
+        _tg("editMessageReplyMarkup", chat_id=CHAT, message_id=msg["message_id"], reply_markup=kb)
+        return
+    if action == "fl":                               # re-render with the chosen framing
+        from watcher import openshorts_client as osc
+        if arg not in osc.FRAMINGS:
+            _tg("answerCallbackQuery", callback_query_id=cq["id"], text="Encuadre desconocido")
+            return
+        db.execute("UPDATE clips SET layout=?, status='queued' WHERE short_id=?", (arg, sid))
+        label = f"🖼 REHACIENDO con encuadre: {osc.FRAMINGS[arg][0]}"
+        _tg("answerCallbackQuery", callback_query_id=cq["id"], text=label)
+        _tg("editMessageCaption", chat_id=CHAT, message_id=msg["message_id"],
+            caption=(msg.get("caption", "") + f"\n\n{label}")[:1024], reply_markup={"inline_keyboard": []})
+        log.info("clip %s -> reframe %s", sid, arg)
+        return
     label = {"ok": "✅ APROBADO — se publicará tras una espera aleatoria", "no": "⏭ DESCARTADO", "recut": "🔁 REHACIENDO"}[action]
     db.set_status(sid, {"ok": "approved", "no": "skipped", "recut": "queued"}[action])
     _tg("answerCallbackQuery", callback_query_id=cq["id"], text=label)
-    msg = cq["message"]
     _tg("editMessageCaption", chat_id=CHAT, message_id=msg["message_id"],
         caption=(msg.get("caption", "") + f"\n\n{label}")[:1024], reply_markup={"inline_keyboard": []})
     if action == "ok":

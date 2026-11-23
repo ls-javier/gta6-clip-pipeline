@@ -38,6 +38,20 @@ def _multipart(fields: dict, file_field: str, file_path: str):
     return b"".join(parts), f"multipart/form-data; boundary={b}"
 
 
+# Framings selectable from Telegram: key -> (button label, OpenShorts `layouts` value).
+# Default is DEFAULT_FRAMING when a clip has no choice stored.
+FRAMINGS = {
+    "a": ("🖥 Juego horizontal + cara", "screencast"),   # full-width game on top, streamer face underneath
+    "b": ("🙂 Cara + centro del juego", "split"),        # face band + game crop (verify on a real clip)
+    "c": ("🎯 Auto (centro del juego)", "auto"),         # OpenShorts picks / face-tracking crop
+}
+DEFAULT_FRAMING = "a"
+
+
+def layouts_for(key) -> str:
+    return FRAMINGS.get(key or DEFAULT_FRAMING, FRAMINGS[DEFAULT_FRAMING])[1]
+
+
 def submit(video_path: str, webhook_url=None, webhook_secret=None, layouts="screencast",
            clip_min=15, clip_max=60, auto_hook=True) -> str:
     fields = {"acknowledged": "true", "output_format": "vertical", "layouts": layouts,

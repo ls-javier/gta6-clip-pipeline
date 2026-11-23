@@ -35,6 +35,8 @@ def clip_meta(db, short_id: str) -> dict:
     credit = f"Clip de {handle} — https://twitch.tv/{c['twitch_channel']}"
     disclosure = c["ad_disclosure_text"] or ""
     caption = "\n".join(x for x in (hook, credit, disclosure, base_tags) if x)
+    yt_credit = f"Clip de {handle}"          # YouTube: no external links in descriptions
+    yt_description = "\n".join(x for x in (hook, yt_credit, disclosure, base_tags) if x)
     yt_title = f"{hook} {handle} #Shorts"[:100]
     checklist = ("REVISA ANTES DE APROBAR:\n"
                  "☐ Sin gore explícito en los primeros 7 s\n☐ No es una cinemática / TV o radio del juego\n"
@@ -42,22 +44,29 @@ def clip_meta(db, short_id: str) -> dict:
     tg = f"🎬 {c['short_id']} · {c['twitch_channel']} · pico {c['spike_ratio'] or 0:.1f}x\nGancho: {hook}\n\n{checklist}"
     keyboard = {"inline_keyboard": [[{"text": "✅ Aprobar", "callback_data": f"ok:{short_id}"},
                                      {"text": "⏭ Descartar", "callback_data": f"no:{short_id}"},
-                                     {"text": "🔁 Rehacer", "callback_data": f"recut:{short_id}"}]]}
+                                     {"text": "🔁 Rehacer", "callback_data": f"recut:{short_id}"}],
+                                    [{"text": "🖼 Cambiar encuadre", "callback_data": f"fr:{short_id}"}]]}
     assert all(len(b["callback_data"].encode()) <= 64 for r in keyboard["inline_keyboard"] for b in r)
     return {"short_id": short_id, "status": c["status"], "channel": c["twitch_channel"], "handle": handle,
-            "hook": hook, "caption": caption, "yt_title": yt_title, "yt_description": caption,
+            "hook": hook, "caption": caption, "yt_title": yt_title, "yt_description": yt_description,
             "telegram_caption": tg[:1024], "telegram_keyboard": json.dumps(keyboard),
             "master_path": c["master_916_path"], "preview_path": c["preview_480p_path"],
             "dry_run": DRY_RUN()}
 
 
-def _multipart(fields, file_field, file_path):
+def _multipart(fields, file_field, file_path, extra_files=()):
     b = uuid.uuid4().hex
     parts = [f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode() for k, v in fields]
     parts.append(f'--{b}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{Path(file_path).name}"\r\n'
                  "Content-Type: video/mp4\r\n\r\n".encode())
     parts.append(Path(file_path).read_bytes())
-    parts.append(f"\r\n--{b}--\r\n".encode())
+    parts.append(b"\r\n")
+    for name, fp, ctype in extra_files:
+        parts.append(f'--{b}\r\nContent-Disposition: form-data; name="{name}"; filename="{Path(fp).name}"\r\n'
+                     f"Content-Type: {ctype}\r\n\r\n".encode())
+        parts.append(Path(fp).read_bytes())
+        parts.append(b"\r\n")
+    parts.append(f"--{b}--\r\n".encode())
     return b"".join(parts), f"multipart/form-data; boundary={b}"
 
 
@@ -94,9 +103,18 @@ def _upload_one(meta: dict, platform: str, dry: bool) -> dict:
               ("description", meta["yt_description"]), ("async_upload", "true"), ("request_id", rid)]
     if platform == "youtube":
         fields.append(("privacyStatus", "private" if dry else "public"))
+        fields.append(("selfDeclaredMadeForKids", "false"))       # "Content for kids: No"
     if platform == "tiktok" and dry:
         fields.append(("privacy_level", "SELF_ONLY"))
-    body, ctype = _multipart(fields, "video", meta["master_path"])
+    extra = []
+    if platform == "youtube":                                        # cover = first frame (hook pill burned in)
+        try:
+            from watcher import media
+            thumb = str(Path(meta["master_path"]).with_name(f"{meta['short_id']}_cover.jpg"))
+            extra.append(("thumbnail", media.first_frame(meta["master_path"], thumb), "image/jpeg"))
+        except Exception as e:
+            log.warning("cover extraction failed, uploading without thumbnail: %s", e)
+    body, ctype = _multipart(fields, "video", meta["master_path"], extra)
     req = urllib.request.Request(f"{UP_BASE}/upload", body, {**_up_headers(), "Content-Type": ctype}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=600) as r:
