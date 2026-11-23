@@ -55,16 +55,25 @@ def update_env(path: Path, values: dict):
 
 
 def save_to_db(db_path: Path, platform, access, refresh, expires_in, extra=None):
+    """Best-effort copy into pipeline.db. The DB is often root-owned (created by the container), in which case
+    we skip: .env is already updated and the pipeline seeds the DB from it on first use."""
     if not db_path.exists():
         return False
+    import sqlite3
     from db import tokens
     from db.state import State
-    db = State(str(db_path))
     try:
-        tokens.save_token(db, platform, access, refresh, expires_in=expires_in, extra=extra)
-    finally:
-        db.close()
-    return True
+        db = State(str(db_path))
+        try:
+            tokens.save_token(db, platform, access, refresh, expires_in=expires_in, extra=extra)
+        finally:
+            db.close()
+        return True
+    except sqlite3.OperationalError as e:
+        print(f"   (note: could not write {db_path}: {e}. Tokens are in .env; the pipeline seeds the DB from it "
+              "on first use. If the DB already has an old {platform} row, delete it: "
+              "docker compose exec watcher sqlite3 /data/pipeline.db \"DELETE FROM oauth_tokens WHERE platform='{platform}'\")")
+        return False
 
 
 def need(env, *keys):
