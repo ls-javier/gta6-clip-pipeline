@@ -71,8 +71,8 @@ def save_to_db(db_path: Path, platform, access, refresh, expires_in, extra=None)
         return True
     except sqlite3.OperationalError as e:
         print(f"   (note: could not write {db_path}: {e}. Tokens are in .env; the pipeline seeds the DB from it "
-              "on first use. If the DB already has an old {platform} row, delete it: "
-              "docker compose exec watcher sqlite3 /data/pipeline.db \"DELETE FROM oauth_tokens WHERE platform='{platform}'\")")
+              f"on first use. If the DB already has an old {platform} row, delete it: "
+              f"docker compose exec watcher sqlite3 /data/pipeline.db \"DELETE FROM oauth_tokens WHERE platform='{platform}'\")")
         return False
 
 
