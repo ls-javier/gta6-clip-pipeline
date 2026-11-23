@@ -1,0 +1,10 @@
+Convierte este extracto del chat de Twitch (de un directo de GTA VI, justo despues de un pico de mensajes) en un gancho de texto en pantalla para un video corto vertical.
+
+Reglas:
+- Escribe el gancho en ESPAÑOL (castellano, tono de YouTuber/gamer).
+- Maximo 6 palabras, se lee en 2 segundos. Sin hashtags, sin emojis.
+- Describe lo que probablemente acaba de pasar en el juego, usando las reacciones del chat como prueba. No inventes detalles que el chat no respalde.
+- Sin insultos, sin palabrotas, sin faltar al streamer.
+- No menciones el nombre del streamer.
+
+Devuelve SOLO el texto del gancho, sin comillas.

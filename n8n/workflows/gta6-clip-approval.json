@@ -1,0 +1,196 @@
+{
+ "name": "gta6-clip-approval",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "clip-ready",
+    "options": {}
+   },
+   "name": "Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "webhookId": "clip-ready",
+   "id": "6bf61473-865a-53fa-b608-c921dda8f2fa"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "=http://watcher:8081/preview/{{ $json.body.short_id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Pipeline-Token",
+       "value": "={{ $env.PIPELINE_TOKEN }}"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 300000
+    }
+   },
+   "name": "Make 480p proxy (VA-API)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    240,
+    0
+   ],
+   "id": "92088948-f885-591c-9f28-1f87e09f4ff5"
+  },
+  {
+   "parameters": {
+    "method": "GET",
+    "url": "=http://watcher:8081/clip/{{ $('Webhook').item.json.body.short_id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Pipeline-Token",
+       "value": "={{ $env.PIPELINE_TOKEN }}"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "name": "Get clip metadata",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    480,
+    0
+   ],
+   "id": "a7cb2152-5728-580b-80ed-3f8248aee16c"
+  },
+  {
+   "parameters": {
+    "method": "GET",
+    "url": "=http://watcher:8081/file/preview/{{ $('Webhook').item.json.body.short_id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Pipeline-Token",
+       "value": "={{ $env.PIPELINE_TOKEN }}"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "responseFormat": "file",
+       "outputPropertyName": "data"
+      }
+     }
+    }
+   },
+   "name": "Download preview",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    720,
+    0
+   ],
+   "id": "4d497f0e-dbc1-5e34-85c4-28b407c43d0c"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendVideo",
+    "sendBody": true,
+    "contentType": "multipart-form-data",
+    "bodyParameters": {
+     "parameters": [
+      {
+       "name": "chat_id",
+       "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+      },
+      {
+       "name": "caption",
+       "value": "={{ $('Get clip metadata').item.json.telegram_caption }}"
+      },
+      {
+       "name": "reply_markup",
+       "value": "={{ $('Get clip metadata').item.json.telegram_keyboard }}"
+      },
+      {
+       "name": "supports_streaming",
+       "value": "true"
+      },
+      {
+       "parameterType": "formBinaryData",
+       "name": "video",
+       "inputDataFieldName": "data"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 120000
+    }
+   },
+   "name": "Telegram: send preview + buttons",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    960,
+    0
+   ],
+   "id": "cefeab7c-6649-5018-9556-2943448396e7"
+  }
+ ],
+ "connections": {
+  "Webhook": {
+   "main": [
+    [
+     {
+      "node": "Make 480p proxy (VA-API)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Make 480p proxy (VA-API)": {
+   "main": [
+    [
+     {
+      "node": "Get clip metadata",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Get clip metadata": {
+   "main": [
+    [
+     {
+      "node": "Download preview",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Download preview": {
+   "main": [
+    [
+     {
+      "node": "Telegram: send preview + buttons",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "id": "gta6clipapproval"
+}

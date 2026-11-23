@@ -1,0 +1,66 @@
+{
+ "name": "disk-cleanup",
+ "nodes": [
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "hours",
+       "hoursInterval": 6
+      }
+     ]
+    }
+   },
+   "name": "Every 6h",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    0
+   ],
+   "id": "bd239c6c-92f5-5c74-95a6-5800d5a0df23"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "http://watcher:8081/cleanup",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Pipeline-Token",
+       "value": "={{ $env.PIPELINE_TOKEN }}"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "name": "Purge files 48h after publish",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    240,
+    0
+   ],
+   "id": "bbb80107-0e8e-555f-9b8f-a8c4845ffad3"
+  }
+ ],
+ "connections": {
+  "Every 6h": {
+   "main": [
+    [
+     {
+      "node": "Purge files 48h after publish",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "id": "diskcleanup"
+}

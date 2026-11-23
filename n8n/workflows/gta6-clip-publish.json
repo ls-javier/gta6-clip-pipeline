@@ -1,0 +1,135 @@
+{
+ "name": "gta6-clip-publish",
+ "nodes": [
+  {
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "clip-approved",
+    "options": {}
+   },
+   "name": "Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "webhookId": "clip-approved",
+   "id": "e403e4fa-b03a-57ec-955f-b5f833ce70f7"
+  },
+  {
+   "parameters": {
+    "resume": "timeInterval",
+    "amount": "={{ Math.round(Number($env.JITTER_MIN_SECONDS) + Math.random() * (Number($env.JITTER_MAX_SECONDS) - Number($env.JITTER_MIN_SECONDS))) }}",
+    "unit": "seconds"
+   },
+   "name": "Jitter wait (15-45 min)",
+   "type": "n8n-nodes-base.wait",
+   "typeVersion": 1.1,
+   "position": [
+    240,
+    0
+   ],
+   "webhookId": "clip-approved-wait",
+   "id": "1a796d8a-f833-586e-a80c-ef0bf0d6352a"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "=http://watcher:8081/publish/{{ $('Webhook').item.json.body.short_id }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "X-Pipeline-Token",
+       "value": "={{ $env.PIPELINE_TOKEN }}"
+      }
+     ]
+    },
+    "options": {
+     "timeout": 1200000
+    }
+   },
+   "name": "Publish via Upload-Post",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    480,
+    0
+   ],
+   "id": "2f5d8ca8-d079-5a1f-aa00-ee04f2c37403"
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+    "sendBody": true,
+    "contentType": "form-urlencoded",
+    "bodyParameters": {
+     "parameters": [
+      {
+       "name": "chat_id",
+       "value": "={{ $env.TELEGRAM_CHAT_ID }}"
+      },
+      {
+       "name": "text",
+       "value": "={{ $json.message }}"
+      },
+      {
+       "name": "disable_web_page_preview",
+       "value": "true"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "name": "Telegram: echo live URLs",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    720,
+    0
+   ],
+   "id": "f066a331-0a4b-539e-af48-8929c6359109"
+  }
+ ],
+ "connections": {
+  "Webhook": {
+   "main": [
+    [
+     {
+      "node": "Jitter wait (15-45 min)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Jitter wait (15-45 min)": {
+   "main": [
+    [
+     {
+      "node": "Publish via Upload-Post",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Publish via Upload-Post": {
+   "main": [
+    [
+     {
+      "node": "Telegram: echo live URLs",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "id": "gta6clippublish"
+}

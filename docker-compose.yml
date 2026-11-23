@@ -1,0 +1,105 @@
+name: gta6-clip-pipeline
+
+x-openshorts-env: &openshorts-env
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  X264_PRESET: ${X264_PRESET:-veryfast}
+  FFMPEG_ENCODER: x264          # CPU-only: never nvenc on this host
+  WHISPER_MODEL: ${WHISPER_MODEL:-small}
+  WHISPER_DEVICE: cpu
+  WHISPER_COMPUTE: int8
+  LLM_BASE_URL: ${LLM_BASE_URL:-}
+  LLM_MODEL: ${LLM_MODEL:-}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+
+services:
+  openshorts-backend:
+    build: ./vendor/openshorts            # default CPU Dockerfile
+    container_name: openshorts-backend
+    environment: *openshorts-env
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - ./data/output:/app/output:z
+    deploy:
+      resources:
+        limits: { memory: 8g }
+    restart: unless-stopped
+
+  openshorts-frontend:
+    build:
+      context: ./vendor/openshorts/dashboard
+      target: dev
+    container_name: openshorts-frontend
+    ports: ["127.0.0.1:5175:5173"]
+    depends_on: [openshorts-backend]
+    restart: unless-stopped
+
+  openshorts-renderer:
+    build:
+      context: ./vendor/openshorts
+      dockerfile: render-service/Dockerfile
+    container_name: openshorts-renderer
+    environment:
+      REMOTION_BUNDLE_PATH: /app/remotion
+      OUTPUT_DIR: /output
+      PORT: "3100"
+    volumes:
+      - ./data/output:/output:z
+    depends_on: [openshorts-backend]
+    restart: unless-stopped
+
+  watcher:
+    build: ./watcher
+    container_name: gta6-watcher
+    env_file: [.env]
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128   # Intel VA-API
+    group_add:
+      - "${RENDER_GID:?set RENDER_GID in .env (stat -c %g /dev/dri/renderD128)}"
+    environment:
+      LIBVA_DRIVER_NAME: iHD
+      DB_PATH: /data/pipeline.db
+      BUFFER_DIR: /data/buffer
+      OPENSHORTS_URL: http://openshorts-backend:8000
+      PUBLISH_DRY_RUN: ${PUBLISH_DRY_RUN:-true}
+    volumes:
+      - ./data:/data:z
+      - ./db:/app/db:ro,z
+      - ./watcher:/app/watcher:ro,z
+      - ./publishers:/app/publishers:ro,z
+      - ./monetization:/app/monetization:ro,z
+      - ./prompts:/app/prompts:ro,z
+      - ./tests:/app/tests:ro,z
+    depends_on: [openshorts-backend]
+    restart: unless-stopped
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    container_name: gta6-n8n
+    ports: ["127.0.0.1:5678:5678"]
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    group_add:
+      - "${RENDER_GID:?set RENDER_GID}"
+    environment:
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY}
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER:-admin}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD:-}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Europe/Madrid}
+      N8N_CONCURRENCY_PRODUCTION_LIMIT: "1"       # strict serialization
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"       # workflows read the vars below via $env
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      PIPELINE_TOKEN: ${HMAC_SECRET:-}
+      JITTER_MIN_SECONDS: ${JITTER_MIN_SECONDS:-900}     # 15 min
+      JITTER_MAX_SECONDS: ${JITTER_MAX_SECONDS:-2700}    # 45 min
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./data:/data:z
+      - ./n8n/workflows:/workflows:ro,z
+    restart: unless-stopped
+
+volumes:
+  n8n_data:
