@@ -92,6 +92,25 @@ class Instagram(Base):
         self.assertEqual(h.calls[0][2]["form"]["upload_type"], "resumable")
         self.assertEqual(up, [("https://rupload.facebook.com/x", self.mp4)])
 
+    def test_upload_retries_with_fresh_container(self):
+        h = Rec(("/media", {"id": "C1", "uri": "https://r1"}), ("/media", {"id": "C2", "uri": "https://r2"}),
+                ("status_code", {"status_code": "FINISHED"}), ("media_publish", {"id": "M"}), ("permalink", {"permalink": "p"}))
+        tries = []
+
+        def flaky(uri, tok, path):
+            tries.append(uri)
+            if len(tries) == 1:
+                raise ApiError("Instagram upload HTTP 408")
+        r = instagram_pub.upload(self.db, self.meta, False, http=h, env=ENV, sleep=lambda s: None, streamer=flaky)
+        self.assertTrue(r["success"])
+        self.assertEqual(tries, ["https://r1", "https://r2"])
+
+    def test_upload_gives_up_after_attempts(self):
+        h = Rec(*[("/media", {"id": "C", "uri": "https://r"})] * 2)
+        with self.assertRaises(ApiError):
+            instagram_pub.upload(self.db, self.meta, False, http=h, env=ENV, sleep=lambda s: None, attempts=2,
+                                 streamer=lambda *a: (_ for _ in ()).throw(ApiError("408")))
+
     def test_dry_run_skipped_and_error_status(self):
         self.assertTrue(instagram_pub.upload(self.db, self.meta, True, http=Rec(), env=ENV).get("skipped"))
         h = Rec(("/media", {"id": "C", "uri": "https://r"}), ("status_code", {"status_code": "ERROR"}))

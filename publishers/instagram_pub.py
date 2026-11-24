@@ -49,7 +49,7 @@ def stream_upload(uri, token, path, chunk=1 << 20, timeout=300):
 
 
 def upload(db, meta, dry, http=_default_http, token_http=tokens.default_http, env=None,
-           sleep=time.sleep, poll_every=10, max_polls=60, streamer=None) -> dict:
+           sleep=time.sleep, poll_every=10, max_polls=60, streamer=None, attempts=4, retry_wait=15) -> dict:
     env = os.environ if env is None else env
     if dry:
         return {"success": False, "url": None, "error": "dry run: Instagram cannot post privately", "skipped": True}
@@ -59,13 +59,23 @@ def upload(db, meta, dry, http=_default_http, token_http=tokens.default_http, en
     token = tokens.get_valid_access_token(db, "instagram", env, token_http)
     uid = env["IG_USER_ID"]
     path = Path(meta["master_path"])
-    # 1) create resumable container
-    c = http("POST", f"{GRAPH}/{uid}/media", form={
-        "media_type": "REELS", "upload_type": "resumable", "caption": meta["caption"][:2200], "access_token": token},
-        timeout=60)
-    cid, uri = c["id"], c["uri"]
-    # 2) stream the master to rupload.facebook.com
-    (streamer or stream_upload)(uri, token, path)
+    # 1+2) create a resumable container and stream the master to rupload.facebook.com.
+    # rupload can time out (HTTP 408 / broken pipe) on slow or jittery uplinks, so retry with a fresh container.
+    last = None
+    for attempt in range(1, attempts + 1):
+        c = http("POST", f"{GRAPH}/{uid}/media", form={
+            "media_type": "REELS", "upload_type": "resumable", "caption": meta["caption"][:2200],
+            "access_token": token}, timeout=60)
+        cid, uri = c["id"], c["uri"]
+        try:
+            (streamer or stream_upload)(uri, token, path)
+            break
+        except (ApiError, OSError) as e:
+            last = e
+            if attempt < attempts:
+                sleep(retry_wait * attempt)
+    else:
+        raise ApiError(f"Instagram upload failed after {attempts} attempts: {last}")
     # 3) poll until FINISHED, then publish
     for _ in range(max_polls):
         st = http("GET", f"{GRAPH}/{cid}?" + urllib.parse.urlencode({"fields": "status_code,status", "access_token": token}),
