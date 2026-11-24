@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS clips (
   hook_text TEXT,
   hashtags TEXT,
   layout TEXT,
+  recut_prompt TEXT,
+  recut_params TEXT,
   status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN
     ('queued','sanitizing','rendering','awaiting_approval','approved','skipped','published','failed')),
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))

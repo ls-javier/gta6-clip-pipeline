@@ -67,3 +67,55 @@ def pick_hashtags(chat_excerpt: str, hook: str):
     except json.JSONDecodeError:
         return []
     return [t for t in tags if t in pool][:5]
+
+
+_RECUT_SYSTEM = """Convierte las instrucciones del usuario para rehacer un clip de Twitch en JSON. Devuelve SOLO un objeto JSON con estas claves (null si no se pide cambio):
+- "layout": "a" (juego horizontal arriba + cara del streamer abajo), "b" (cara + centro del juego), "c" (automatico) o null
+- "hook_text": texto nuevo del gancho para titulo/descripcion (max 60 caracteres, en espanol) o null
+- "auto_hook": false si pide quitar el gancho/texto superpuesto, true si pide ponerlo, si no null
+- "captions": false si pide quitar subtitulos, true si pide ponerlos, si no null
+- "clip_min", "clip_max": duracion deseada en segundos (enteros) o null
+- "trim_start": segundos a quitar del principio del clip original o null
+- "trim_end": segundos a quitar del final o null
+- "audio": "strict" (quitar musica/solo voz) o "balanced" (mas sonido del juego) o null
+- "unapplied": lo que el usuario pidio y NO encaja en las claves anteriores (texto breve) o null
+"""
+
+
+def parse_recut(prompt: str):
+    """Free-text recut request -> params dict. Falls back to keyword rules when Gemini is down."""
+    out = _call(_RECUT_SYSTEM, prompt[:1500])
+    m = re.search(r"\{.*\}", out or "", re.S)
+    if m:
+        try:
+            d = json.loads(m.group(0))
+            if isinstance(d, dict):
+                return _clean_recut(d)
+        except json.JSONDecodeError:
+            pass
+    low = prompt.lower()
+    d = {}
+    if re.search(r"sin (subt|caption)", low): d["captions"] = False
+    if re.search(r"sin (hook|gancho|texto)", low): d["auto_hook"] = False
+    if re.search(r"sin m[uú]sica|quita.*m[uú]sica", low): d["audio"] = "strict"
+    elif re.search(r"m[aá]s (sonido|audio|efectos)", low): d["audio"] = "balanced"
+    d = _clean_recut(d)
+    d["fallback"] = True
+    return d
+
+
+def _clean_recut(d: dict) -> dict:
+    ok = {}
+    if d.get("layout") in ("a", "b", "c"): ok["layout"] = d["layout"]
+    if isinstance(d.get("hook_text"), str) and d["hook_text"].strip(): ok["hook_text"] = d["hook_text"].strip()[:60]
+    for k in ("auto_hook", "captions"):
+        if isinstance(d.get(k), bool): ok[k] = d[k]
+    for k in ("clip_min", "clip_max"):
+        if isinstance(d.get(k), (int, float)) and 5 <= d[k] <= 180: ok[k] = int(d[k])
+    for k in ("trim_start", "trim_end"):
+        if isinstance(d.get(k), (int, float)) and 0 < d[k] < 40: ok[k] = float(d[k])
+    if d.get("audio") in ("strict", "balanced"): ok["audio"] = d["audio"]
+    if isinstance(d.get("unapplied"), str) and d["unapplied"].strip(): ok["unapplied"] = d["unapplied"].strip()[:200]
+    if "clip_min" in ok and "clip_max" in ok and ok["clip_max"] < ok["clip_min"] + 5:
+        ok["clip_max"] = min(180, ok["clip_min"] + 5)
+    return ok

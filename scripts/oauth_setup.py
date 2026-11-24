@@ -178,7 +178,9 @@ def instagram_flow(env, env_path, db_path, http=_http, ask=input, ask_secret=get
     need(env, "IG_APP_ID", "IG_APP_SECRET")
     print("\nIn Graph API Explorer (developers.facebook.com/tools/explorer): pick your app, 'Get User Access Token' with")
     print("instagram_basic, instagram_content_publish, instagram_manage_insights, pages_show_list, pages_read_engagement.")
-    short = ask_secret("Paste the short-lived token (hidden): ").strip()
+    short = ask_secret("Paste the short-lived token (hidden unless --visible; Ctrl+Shift+V, then Enter): ").strip()
+    if not short:
+        sys.exit("No token received. Paste with Ctrl+Shift+V, or rerun with --visible to see what you paste.")
     j = http("GET", f"{GRAPH}/oauth/access_token?" + urllib.parse.urlencode({
         "grant_type": "fb_exchange_token", "client_id": env["IG_APP_ID"], "client_secret": env["IG_APP_SECRET"],
         "fb_exchange_token": short}), timeout=30)
@@ -220,6 +222,7 @@ def main(argv=None):
     ap.add_argument("--env", default=str(ROOT / ".env"))
     ap.add_argument("--db", default=str(ROOT / "data" / "pipeline.db"))
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--visible", action="store_true", help="show pasted tokens on screen (instagram)")
     a = ap.parse_args(argv)
     env_path, db_path = Path(a.env), Path(a.db)
     env = read_env(env_path)
@@ -231,7 +234,7 @@ def main(argv=None):
         elif a.platform == "tiktok":
             tiktok_flow(env, env_path, db_path, open_browser=not a.no_browser)
         else:
-            instagram_flow(env, env_path, db_path)
+            instagram_flow(env, env_path, db_path, ask_secret=input if a.visible else getpass.getpass)
     except ApiError as e:
         sys.exit(f"API error: {e}")
 

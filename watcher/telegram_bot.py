@@ -2,6 +2,7 @@
 import json
 import logging
 import os
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -49,6 +50,14 @@ def handle_callback(db, cq: dict):
         _tg("answerCallbackQuery", callback_query_id=cq["id"])
         _tg("editMessageReplyMarkup", chat_id=CHAT, message_id=msg["message_id"], reply_markup=kb)
         return
+    if action == "recut":                            # ask for the changes as free text (reply to this message)
+        _tg("answerCallbackQuery", callback_query_id=cq["id"], text="Escribe los cambios")
+        _tg("sendMessage", chat_id=CHAT, reply_markup={"force_reply": True, "selective": True,
+            "input_field_placeholder": "p.ej. sin música, empieza 5s más tarde, encuadre horizontal"},
+            text=f"✏️ Rehacer clip {sid}: responde a este mensaje con los cambios que quieres "
+                 "(encuadre, subtítulos, gancho, duración, recortar inicio/final, más/menos sonido del juego). "
+                 "Escribe «-» para rehacerlo sin cambios.")
+        return
     if action == "fl":                               # re-render with the chosen framing
         from watcher import openshorts_client as osc
         if arg not in osc.FRAMINGS:
@@ -71,6 +80,39 @@ def handle_callback(db, cq: dict):
     log.info("clip %s -> %s", sid, action)
 
 
+def handle_message(db, msg: dict):
+    """Reply to the 'Rehacer' force-reply prompt -> parse the request, store it, requeue the clip."""
+    if str(msg.get("chat", {}).get("id")) != CHAT or not msg.get("text"):
+        return
+    m = re.search(r"Rehacer clip ([a-z0-9]{6})", (msg.get("reply_to_message") or {}).get("text", ""))
+    if not m:
+        return
+    sid, text = m[1], msg["text"].strip()
+    rows = db.query("SELECT status FROM clips WHERE short_id=?", (sid,))
+    if not rows or rows[0]["status"] != "awaiting_approval":
+        _tg("sendMessage", chat_id=CHAT, text=f"Clip {sid}: ya no está pendiente ({rows[0]['status'] if rows else 'desconocido'}).")
+        return
+    from watcher import llm
+    params = {} if text in ("-", "–") else llm.parse_recut(text)
+    fallback = params.pop("fallback", False)
+    unapplied = params.pop("unapplied", None)
+    db.execute("UPDATE clips SET recut_prompt=?, recut_params=?, status='queued' WHERE short_id=?",
+               (text, json.dumps(params), sid))
+    if params.get("layout"):
+        db.execute("UPDATE clips SET layout=? WHERE short_id=?", (params["layout"], sid))
+    names = {"layout": "encuadre", "hook_text": "gancho", "auto_hook": "gancho en pantalla", "captions": "subtítulos",
+             "clip_min": "duración mín (s)", "clip_max": "duración máx (s)", "trim_start": "quitar del inicio (s)",
+             "trim_end": "quitar del final (s)", "audio": "audio"}
+    lines = [f"🔁 Rehaciendo {sid}" + (" (sin cambios)" if not params and not unapplied else ":")]
+    lines += [f"• {names[k]}: {v}" for k, v in params.items()]
+    if unapplied:
+        lines.append(f"⚠️ No puedo aplicar: {unapplied}")
+    if fallback:
+        lines.append("⚠️ El LLM no respondió; solo entendí palabras clave simples. Si falta algo, vuelve a pulsar Rehacer cuando se recupere.")
+    _tg("sendMessage", chat_id=CHAT, text="\n".join(lines))
+    log.info("clip %s recut requested: %s", sid, params)
+
+
 def poll_forever(db):
     if not TOKEN or not CHAT:
         log.warning("telegram not configured; poller off")
@@ -82,9 +124,14 @@ def poll_forever(db):
     offset = 0
     while True:
         try:
-            r = _tg("getUpdates", offset=str(offset), timeout="30", allowed_updates=["callback_query"])
+            r = _tg("getUpdates", offset=str(offset), timeout="30", allowed_updates=["callback_query", "message"])
             for u in r.get("result", []):
                 offset = u["update_id"] + 1
+                if "message" in u:
+                    try:
+                        handle_message(db, u["message"])
+                    except Exception:
+                        log.exception("message handler failed")
                 if "callback_query" in u:
                     try:
                         handle_callback(db, u["callback_query"])

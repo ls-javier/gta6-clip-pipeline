@@ -53,10 +53,10 @@ def layouts_for(key) -> str:
 
 
 def submit(video_path: str, webhook_url=None, webhook_secret=None, layouts="screencast",
-           clip_min=15, clip_max=60, auto_hook=True) -> str:
+           clip_min=15, clip_max=60, auto_hook=True, captions=True) -> str:
     fields = {"acknowledged": "true", "output_format": "vertical", "layouts": layouts,
               "target_clips": "1", "clip_min_seconds": str(clip_min), "clip_max_seconds": str(clip_max),
-              "auto_hook": "true" if auto_hook else "false", "captions": "true"}
+              "auto_hook": "true" if auto_hook else "false", "captions": "true" if captions else "false"}
     if webhook_url:
         fields["webhook_url"] = webhook_url
         if webhook_secret:
