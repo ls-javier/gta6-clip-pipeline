@@ -189,6 +189,23 @@ def instagram_flow(env, env_path, db_path, http=_http, ask=input, ask_secret=get
         "fields": "name,id,instagram_business_account{id,username}", "access_token": long_tok}), timeout=30).get("data", [])
     linked = [(p["name"], p["instagram_business_account"]) for p in pages if p.get("instagram_business_account")]
     if not linked:
+        try:
+            perms = http("GET", f"{GRAPH}/me/permissions?" + urllib.parse.urlencode({"access_token": long_tok}), timeout=30)
+            granted = sorted(p["permission"] for p in perms.get("data", []) if p.get("status") == "granted")
+            declined = sorted(p["permission"] for p in perms.get("data", []) if p.get("status") != "granted")
+        except Exception as e:
+            granted, declined = [f"(could not read: {e})"], []
+        print("\nDiagnostics:")
+        print(f"  Pages visible to this token: {[p['name'] for p in pages] or 'NONE'}")
+        print(f"  Permissions granted: {granted}")
+        if declined:
+            print(f"  Permissions declined/expired: {declined}")
+        if not pages:
+            print("  -> No Pages: in the Facebook popup you didn't tick your Page (or pages_show_list was not granted).\n"
+                  "     Regenerate the token and choose 'Edit settings' to select the Page, or use a Page in a Business\n"
+                  "     Portfolio with business_management granted.")
+        else:
+            print("  -> Pages found but none has an Instagram account linked to it (or the token lacks instagram_basic).")
         sys.exit("No Facebook Page with a linked Instagram Business account found. Convert the IG account to Business "
                  "and link it to a Page (Instagram app -> Settings -> Account type and tools / Linked accounts).")
     if len(linked) > 1:
