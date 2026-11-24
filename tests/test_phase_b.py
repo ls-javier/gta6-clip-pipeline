@@ -81,21 +81,23 @@ class YouTube(Base):
 class Instagram(Base):
     def test_three_step_flow(self):
         h = Rec(("/v27.0/u1/media", {"id": "C1", "uri": "https://rupload.facebook.com/x"}),
-                ("rupload.facebook.com", {}),
                 ("fields=status_code", {"status_code": "IN_PROGRESS"}),
                 ("fields=status_code", {"status_code": "FINISHED"}),
                 ("media_publish", {"id": "M1"}),
                 ("fields=permalink", {"permalink": "https://instagram.com/reel/abc"}))
-        r = instagram_pub.upload(self.db, self.meta, False, http=h, env=ENV, sleep=lambda s: None)
+        up = []
+        r = instagram_pub.upload(self.db, self.meta, False, http=h, env=ENV, sleep=lambda s: None,
+                                 streamer=lambda uri, tok, path: up.append((uri, path)))
         self.assertEqual((r["success"], r["url"], r["video_id"]), (True, "https://instagram.com/reel/abc", "M1"))
         self.assertEqual(h.calls[0][2]["form"]["upload_type"], "resumable")
-        self.assertEqual(h.calls[1][2]["headers"]["file_size"], "2048")
+        self.assertEqual(up, [("https://rupload.facebook.com/x", self.mp4)])
 
     def test_dry_run_skipped_and_error_status(self):
         self.assertTrue(instagram_pub.upload(self.db, self.meta, True, http=Rec(), env=ENV).get("skipped"))
-        h = Rec(("/media", {"id": "C", "uri": "https://r"}), ("https://r", {}), ("status_code", {"status_code": "ERROR"}))
+        h = Rec(("/media", {"id": "C", "uri": "https://r"}), ("status_code", {"status_code": "ERROR"}))
         with self.assertRaises(ApiError):
-            instagram_pub.upload(self.db, self.meta, False, http=h, env=ENV, sleep=lambda s: None)
+            instagram_pub.upload(self.db, self.meta, False, http=h, env=ENV, sleep=lambda s: None,
+                                 streamer=lambda *a: None)
 
 
 class TikTok(Base):

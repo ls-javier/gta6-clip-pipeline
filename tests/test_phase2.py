@@ -52,6 +52,26 @@ def make_fake_buffer(root: Path, now: float):
         os.utime(f, (end, end))
     return d
 
+def test_laugh_trigger():
+    from watcher.irc_watcher import is_laugh
+    for t in ("JAJAJAJA", "jajaja", "ajajaj", "jejeje", "HAHAHA", "xd", "LUL", "KEKW", "😂", "kkkkk"):
+        assert is_laugh(t), t
+    for t in ("hola", "hijo", "ahora", "dejar", "Jamón", "ja", "exacto"):
+        assert not is_laugh(t), t
+    t = [0.0]
+    d = SpikeDetector(clock=lambda: t[0], ratio=2.5, min_history=6)
+    for b in range(10):                                   # steady 10 msgs/bin baseline
+        for i in range(10):
+            t[0] = b * 10 + i; assert d.add(t[0], "hola") is None
+    hits = []
+    for i in range(8):                                    # 8 laughs, count 8 < 2.5x baseline: only the laugh path fires
+        t[0] = 100 + i
+        if d.add(t[0], "jajaja"): hits.append(d.last_reason)
+    assert hits == ["laugh"], hits
+    t[0] = 101.5                                          # cooldown still blocks a second clip
+    assert d.add(t[0], "jajaja") is None
+
+
 def test_slice_and_db():
     with tempfile.TemporaryDirectory() as td:
         now = time.time()
