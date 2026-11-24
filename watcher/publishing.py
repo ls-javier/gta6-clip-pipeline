@@ -201,7 +201,7 @@ def _looks_like_quota(err) -> bool:
     return any(h.lower() in str(err or "").lower() for h in _QUOTA_HINTS)
 
 
-def publish(db, short_id: str) -> dict:
+def publish(db, short_id: str, only=None) -> dict:
     meta = clip_meta(db, short_id)
     if meta["status"] != "approved":
         raise RuntimeError(f"clip {short_id} is {meta['status']}, not approved")
@@ -220,7 +220,7 @@ def publish(db, short_id: str) -> dict:
     if backend in ("native", "hybrid"):
         from watcher import native_publishers as npub
         native_avail = npub.configured_platforms()
-    wanted = list(ALL_PLATFORMS)
+    wanted = [p for p in ALL_PLATFORMS if only is None or p in only]
     skipped = {}
     if dry and "instagram" in wanted:                # Instagram has no private visibility
         wanted.remove("instagram")

@@ -47,8 +47,8 @@ def _on_tiktok_found(db, short_id):
     return cb
 
 
-def publish(db, short_id: str) -> dict:
-    res = publishing.publish(db, short_id)
+def publish(db, short_id: str, only=None) -> dict:
+    res = publishing.publish(db, short_id, only=only)
     if res["dry_run"]:                      # private test posts never enter bounty tracking
         return res
     from publishers import tiktok_inbox_pub
